@@ -82,6 +82,29 @@ class Dataset(FrozenDict):
             next_observations=next_observations,
         )
 
+    def sample_traj(self, batch_size, h):
+        """Sample time-major trajectory windows of h + 1 steps, as RQL expects.
+
+        Ported from https://github.com/aoberai/rql/blob/main/utils/datasets.py (Dataset.sample_traj).
+        Episodes are sampled uniformly (among those longer than one step), then a start step uniformly
+        within the episode; indices past the episode end are clipped to its last step.
+        Returns arrays of shape (h + 1, batch_size, ...).
+        """
+        idxs = np.random.choice(np.flatnonzero(self.terminal_locs - self.initial_locs), batch_size, replace=batch_size >= len(self.initial_locs))
+        bt_initial_locs = self.initial_locs[idxs]
+        bt_terminal_locs = self.terminal_locs[idxs]
+
+        start_locs = np.random.randint(bt_initial_locs, bt_terminal_locs)
+
+        keys = ['observations', 'actions', 'rewards', 'terminals', 'masks']
+        steps = {k: [] for k in keys}
+        for i in range(h + 1):
+            cur_idxs = np.minimum(i + start_locs, bt_terminal_locs)
+            for k in keys:
+                steps[k].append(self[k][cur_idxs][None])
+
+        return {k: np.concatenate(v, 0) for k, v in steps.items()}
+
     def get_subset(self, idxs):
         """Return a subset of the dataset given the indices."""
         result = jax.tree_util.tree_map(lambda arr: arr[idxs], self._dict)
@@ -141,6 +164,10 @@ class ReplayBuffer(Dataset):
             buffer[self.pointer] = new_element
 
         jax.tree_util.tree_map(set_idx, self._dict, transition)
+        if transition['terminals'] > 0:
+            # Keep episode boundaries current for sample_traj.
+            self.terminal_locs = np.append(self.terminal_locs, self.pointer)
+            self.initial_locs = np.concatenate([[0], self.terminal_locs[:-1] + 1])
         self.pointer = (self.pointer + 1) % self.max_size
         self.size = max(self.pointer, self.size)
 

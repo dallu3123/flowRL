@@ -71,7 +71,7 @@ class LoggingHelper:
 
 def main(_):
     exp_name = get_exp_name(FLAGS)
-    run = setup_wandb(project='qam-reproduce', group=FLAGS.run_group, name=exp_name, tags=FLAGS.tags.split(","))
+    run = setup_wandb(project='flowrl', group=FLAGS.run_group, name=exp_name, tags=FLAGS.tags.split(","))
     FLAGS.save_dir = os.path.join(FLAGS.save_dir, wandb.run.project, FLAGS.run_group, FLAGS.env_name, exp_name)
     
     # data loading
@@ -135,7 +135,16 @@ def main(_):
     
     train_dataset = process_train_dataset(train_dataset)
     example_batch = train_dataset.sample(())
-    
+
+    # Agents with batch_format='traj' (RQL) train on time-major trajectory windows instead of sample_sequence.
+    use_traj_batches = config.get('batch_format', 'sequence') == 'traj'
+    assert not (use_traj_batches and FLAGS.balanced_sampling), "balanced_sampling is not supported for traj batches"
+
+    def sample_batch(ds, batch_size):
+        if use_traj_batches:
+            return ds.sample_traj(batch_size, h=config['h'])
+        return ds.sample_sequence(batch_size, sequence_length=FLAGS.horizon_length, discount=discount)
+
     agent_class = agents[config['agent_name']]
     agent = agent_class.create(
         FLAGS.seed,
@@ -220,7 +229,7 @@ def main(_):
             )
             train_dataset = process_train_dataset(train_dataset)
 
-        batch = train_dataset.sample_sequence(config['batch_size'], sequence_length=FLAGS.horizon_length, discount=discount)
+        batch = sample_batch(train_dataset, config['batch_size'])
 
         if config['agent_name'] == 'rebrac':
             agent, offline_info = agent.update(batch, full_update=(i % config['actor_freq'] == 0))
@@ -299,7 +308,10 @@ def main(_):
                 action = np.random.rand(action_dim) * 2. - 1.
                 action = np.clip(action, -1., 1.)
             else:
-                action = agent.sample_actions(observations=ob, rng=key)
+                if 'online_temperature' in config:
+                    action = agent.sample_actions(observations=ob, rng=key, temperature=config['online_temperature'])
+                else:
+                    action = agent.sample_actions(observations=ob, rng=key)
 
             action_chunk = np.array(action).reshape(-1, action_dim)
             for action in action_chunk:
@@ -350,8 +362,12 @@ def main(_):
                     dataset_batch[k].reshape((FLAGS.utd_ratio, config["batch_size"] // 2) + dataset_batch[k].shape[1:]), 
                     replay_batch[k].reshape((FLAGS.utd_ratio, config["batch_size"] // 2) + replay_batch[k].shape[1:])], axis=1) for k in dataset_batch}
                 
+            elif use_traj_batches:
+                # Time-major batches: stack UTD batches on a new leading axis.
+                batches = [sample_batch(replay_buffer, config['batch_size']) for _ in range(FLAGS.utd_ratio)]
+                batch = {k: np.stack([b[k] for b in batches]) for k in batches[0]}
             else:
-                batch = replay_buffer.sample_sequence(config['batch_size'] * FLAGS.utd_ratio, 
+                batch = replay_buffer.sample_sequence(config['batch_size'] * FLAGS.utd_ratio,
                             sequence_length=FLAGS.horizon_length, discount=discount)
                 batch = jax.tree.map(lambda x: x.reshape((
                     FLAGS.utd_ratio, config["batch_size"]) + x.shape[1:]), batch)
