@@ -20,5 +20,7 @@ Flow matching / diffusion 기반 생성 모델과 강화학습(RL)을 결합하�
 |---|---|
 | `docs/literature_survey.md` | 관련 연구 조사 정리 |
 | `docs/research_ideas.md` | 연구 공백 및 아이디어 후보 |
+| `reports/` | 위 두 문서의 원본인 통합 조사 보고서 |
+| `research_notes/` | 하위 분야별 조사 노트 (오프라인/O2O, 온라인, 로보틱스·VLA, 생성 모델 파인튜닝) |
 
 실험 코드와 결과는 아이디어가 정해지는 대로 추가합니다.
