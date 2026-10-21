@@ -15,6 +15,25 @@
 | 4 | Mode를 보존하는 RL fine-tuning | 온라인/O2O/VLA | DiverseGRPO, TMPO, DPPO, QAM | 중 (~1–2k GPU-h) | 중 (이식으로 보일 위험) | 2순위 |
 | 5 | ODE-consistent 탐색 noise 학습 | 온라인, VLA | ReinFlow, πRL, Uncertainty-Gated, GSB-MDPO | 높음 (VLA 포함 시) | 중–높음 | 2순위 |
 
+## 현재 비교 기준: FQL 이후의 SOTA 후보 (2026-10 기준)
+
+FQL은 이제 공통 비교 기준일 뿐이고, 이겨야 할 대상은 아래의 2026년 방법들이다. 모든 아이디어의 offline·O2O 실험은 최소한 **RQL, QAM, SORL**을 베이스라인에 포함한다. SQAM은 코드가 공개되면 추가한다. 성능 수치는 모두 저자 또는 2차 출처가 보고한 값이며, 서로 다른 튜닝 예산에서 나온 것이라 직접 비교할 수 없다.
+
+| 방법 | 핵심 | 게재 | 보고 성능 (OGBench) | 공식 코드 |
+|---|---|---|---|---|
+| FQL | BC flow + 증류된 one-step actor | ICML 2025 | 공통 기준점 | [seohongpark/fql](https://github.com/seohongpark/fql) |
+| QC (Q-chunking) | action chunk 단위 Q-learning, O2O | NeurIPS 2025 | O2O 기준점 | [ColinQiyangLi/qc](https://github.com/ColinQiyangLi/qc) |
+| SORL | shortcut 모델 + Q verifier best-of-N | NeurIPS 2025 | 어려운 도메인(AntSoccer, AntMaze-Large)에서 이득 집중 | [nico-espinosadice/sorl](https://github.com/nico-espinosadice/sorl) |
+| Value Flows | flow 기반 분포형 critic | arXiv 2510.07650 (venue 미확인) | 어려운 state 과제에서 1.6배 성공률 | [chongyi-zheng/value-flows](https://github.com/chongyi-zheng/value-flows) |
+| QAM | adjoint matching으로 multi-step flow를 Q에 직접 최적화 | ICLR 2026 | 50개 과제 집계 44 대 BAM 35 (2차 출처) | [ColinQiyangLi/qam](https://github.com/ColinQiyangLi/qam) |
+| ReFORM | reflected flow, support 안 노이즈 조작 | ICLR 2026 | 40개 과제 performance profile 우위 | [mit-realm/reform](https://github.com/mit-realm/reform) |
+| RQL | flow 정제 단계를 action으로 보는 확장 MDP, flow 역전으로 가상 궤적 생성, BPTT 없음 | arXiv 2606.17551 (venue 미확인) | 50개 과제에서 flow 기반 방법 중 최고 평균 | [aoberai/rql](https://github.com/aoberai/rql) |
+| TRQAM | QAM에 trust region 추가 | arXiv 2605.27079 (venue 미확인) | 50개 과제 68% (SQAM 논문 기준, 2차 출처) | 찾지 못함 |
+| SQAM | per-step VJP를 closed-form scalar adjoint로 대체 | arXiv 2610.10437 (venue 미확인) | 50개 과제 75%, 가장 어려운 4개 도메인 +18–35%p (2차 출처) | 찾지 못함 |
+| ReBRAC-v2 | 강하게 튜닝한 Gaussian/deterministic 정책 | arXiv 2608.01205 (venue 미확인) | flow 방법과 경쟁 가능 주장 (제목 수준 근거) | 확인 안 함 |
+
+코드 공개 여부는 2026-10-21에 GitHub 저장소 존재와 README의 논문 링크로 확인했다. QAM 저장소에는 FQL, ReBRAC, RLPD, DSRL, BAM, FBRAC, IFQL 등의 베이스라인 구현이 함께 들어 있어서, 이 저장소의 실험 코드는 이를 기반으로 한다 (`flowrl/` 참고).
+
 ## 아이디어 1: Q를 verifier로 쓰는 test-time scaling의 과낙관을 교정한다
 
 **문제와 공백.** 2025–26년 offline flow 정책은 추론 시 계산량으로 성능을 사는 방향으로 가고 있다. SORL은 Q를 verifier로 쓰는 best-of-N을 쓰고 ([SORL](https://nico-espinosadice.github.io/projects/sorl/)), Value Flows는 rejection sampling을 쓴다 ([Value Flows](https://arxiv.org/pdf/2510.07650)). QPILOTS와 test-time gradient guidance는 Q-gradient로 sampler를 유도하며 ([QPILOTS](https://arxiv.org/pdf/2606.14801); [arXiv 2606.11087](https://arxiv.org/pdf/2606.11087)), V-GPS는 범용 로봇 정책의 샘플을 재순위화한다 ([V-GPS](https://proceedings.mlr.press/v270/nakamoto25a.html)). 그런데 오프라인에서 학습된 Q는 OOD action에서 과대추정된다. N을 키울수록 선택은 Q 오류가 가장 큰 action 쪽으로 쏠린다. 일종의 winner's curse다. 이미지 쪽은 best-of-n의 과낙관과 SMC weight degeneracy를 명시적 문제로 다루지만 ([Nested SMC](https://arxiv.org/html/2608.20123); [TRI-TSMC](https://arxiv.org/html/2605.25123)), 정책 RL에는 이에 대한 분석이 없다.
@@ -23,7 +42,7 @@
 
 **신규성.** SORL, V-GPS, Value Flows는 Q를 그대로 신뢰한다. QPILOTS류는 gradient 유도라서 과낙관을 다루지 않는다. 이미지 쪽 SMC 연구는 reward model이 고정되어 있다고 가정하며, bootstrapped Q처럼 외삽 오류가 구조적으로 커지는 verifier는 다루지 않는다. 기여는 "N-scaling 하에서의 offline RL pessimism"이라는 새 축을 이론과 측정으로 정립하는 데 있다. 경험적 관찰만이 아니라 N과 critic 분산의 함수로 과낙관 상한을 제시하는 것까지 포함한다.
 
-**최소 실험 계획.** 벤치마크는 OGBench의 어려운 도메인이다. SORL과 SQAM이 가장 큰 차이를 보인 antsoccer, antmaze-large/giant, humanoidmaze, cube-double, puzzle 계열에서 도메인당 5개 과제를 쓴다. 여기에 D4RL antmaze를 더하고, 로봇 확장으로는 V-GPS 설정이나 Robomimic Can/Square 하나를 쓴다. Base 정책은 FQL의 BC flow, SORL, GFP다. Baseline은 greedy Q best-of-N(SORL식), IDQL/SfBC식 exp(βQ) resampling, Value Flows rejection sampling, Q-gradient guidance(QPILOTS 재현), CFGRL이다. 대조군으로 ReBRAC에도 같은 test-time 계산을 준다(Gaussian에서 N개 샘플). Gaussian으로도 같은 이득이 나는지 확인하기 위해서다. 지표는 N별 success rate 곡선, Q̂−MC gap, decision당 추론 ms와 NFE, 그리고 N=1 성능을 해치지 않는지다. 시드는 8개로 한다.
+**최소 실험 계획.** 벤치마크는 OGBench의 어려운 도메인이다. SORL과 SQAM이 가장 큰 차이를 보인 antsoccer, antmaze-large/giant, humanoidmaze, cube-double, puzzle 계열에서 도메인당 5개 과제를 쓴다. 여기에 D4RL antmaze를 더하고, 로봇 확장으로는 V-GPS 설정이나 Robomimic Can/Square 하나를 쓴다. Base 정책은 FQL의 BC flow, SORL, GFP, 그리고 현재 SOTA 후보인 RQL과 QAM이다. 강한 base 위에서도 test-time 이득이 남는지가 핵심 검증이다. N=1 기준선으로 RQL, QAM, SQAM(코드 공개 시)의 보고 성능을 함께 제시한다. Baseline은 greedy Q best-of-N(SORL식), IDQL/SfBC식 exp(βQ) resampling, Value Flows rejection sampling, Q-gradient guidance(QPILOTS 재현), CFGRL이다. 대조군으로 ReBRAC에도 같은 test-time 계산을 준다(Gaussian에서 N개 샘플). Gaussian으로도 같은 이득이 나는지 확인하기 위해서다. 지표는 N별 success rate 곡선, Q̂−MC gap, decision당 추론 ms와 NFE, 그리고 N=1 성능을 해치지 않는지다. 시드는 8개로 한다.
 
 **예상 위험.** Q가 잘 보정된 과제에서는 이득이 작을 수 있다. 그래서 과제 선택이 결과를 좌우할 수 있으며, 이를 막으려면 과제 전체 결과를 사전에 정한 방식으로 보고해야 한다. ensemble critic은 학습 비용을 2–5배 늘린다. SMC 확장은 중간 단계 Q 학습이 불안정하면 실패할 수 있으므로 별도 단계로 분리해 진행하는 것이 안전하다. 2026년 test-time steering 논문이 3편 이상 나왔으므로, 그중 하나가 이미 pessimism을 다뤘는지 본문을 확인해야 한다.
 
@@ -51,7 +70,7 @@
 
 **신규성.** DSRL, EXPO, PA-RL은 끝까지 동결한다. PLD는 사후에 SFT로 증류할 뿐 RL 중에 전환하지 않는다. OGPO와 SAC Flow는 처음부터 full fine-tuning을 한다. FQL은 증류된 actor만 바꾼다. **원리적인 전환 기준과 도달 가능 집합에 대한 이론**을 함께 제시한 연구는 노트에서 찾지 못했다. 또한 dip, overestimation, manifold 확장을 한 틀에서 측정하는 것 자체가 flow O2O 최초의 체계적 진단이 된다.
 
-**최소 실험 계획.** 벤치마크는 FQL/Q-chunking 프로토콜의 OGBench O2O(1M offline + 1M online), 그중 cube, puzzle, antmaze, humanoidmaze 10개 과제다. 여기에 D4RL antmaze/adroit와 DSRL·OGPO와 직접 비교할 수 있는 pixel Robomimic Can/Square를 더한다. 확장 실험으로 RLinf의 π0 DSRL 구현 위 LIBERO나 ManiSkill 부분집합을 쓸 수 있다. Baseline은 FQL, QC-FQL, DSRL(SAC 및 NA), EXPO, PA-RL, SAC Flow, FINO, OGPO(코드가 있으면), QAM/TRQAM(코드가 있으면)이고, Gaussian 대조군으로 Cal-QL과 RLPD를 쓴다. 지표는 최종 success, dip 크기(온라인 초기 10% 구간의 최저 정규화 성능), 온라인 학습곡선 아래 면적, OGPO식 manifold 확장, Q̂−MC gap, wall-clock이다. Ablation은 포화 통계량 대 고정 시점 전환 대 무작위 전환, 그리고 체제별 결과다.
+**최소 실험 계획.** 벤치마크는 FQL/Q-chunking 프로토콜의 OGBench O2O(1M offline + 1M online), 그중 cube, puzzle, antmaze, humanoidmaze 10개 과제다. 여기에 D4RL antmaze/adroit와 DSRL·OGPO와 직접 비교할 수 있는 pixel Robomimic Can/Square를 더한다. 확장 실험으로 RLinf의 π0 DSRL 구현 위 LIBERO나 ManiSkill 부분집합을 쓸 수 있다. Baseline은 FQL, QC-FQL, DSRL(SAC 및 NA), EXPO, PA-RL, SAC Flow, FINO, OGPO(코드가 있으면), QAM(코드 공개), RQL(코드 공개, `online_steps` 지원), TRQAM·SQAM(코드 공개 시)이고, Gaussian 대조군으로 Cal-QL과 RLPD를 쓴다. 지표는 최종 success, dip 크기(온라인 초기 10% 구간의 최저 정규화 성능), 온라인 학습곡선 아래 면적, OGPO식 manifold 확장, Q̂−MC gap, wall-clock이다. Ablation은 포화 통계량 대 고정 시점 전환 대 무작위 전환, 그리고 체제별 결과다.
 
 **예상 위험.** 포화 통계량이 noisy하면 전환 시점이 흔들린다. 전환 자체가 피하려던 dip을 일으킬 수도 있으므로 trust region 크기가 핵심 하이퍼파라미터가 된다. action chunk가 길면 Jacobian 계산 비용이 커지는데, JVP 기반 무작위 투영으로 완화할 수 있다. 잘 튜닝된 QC-FQL 대비 이득이 작을 수 있으므로, 이득이 dip 제거와 sample efficiency에서 주로 나오도록 지표를 설계해야 한다.
 
