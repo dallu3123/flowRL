@@ -219,6 +219,7 @@ class RQLAgent(flax.struct.PyTreeNode):
         config,
     ):
 
+        config = dict(config)  # Copy so the jnp entries below do not leak into the caller's config (FLAGS.agent).
         rng = jax.random.PRNGKey(seed)
         rng, init_rng = jax.random.split(rng, 2)
 

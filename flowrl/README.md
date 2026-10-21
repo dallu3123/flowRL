@@ -26,15 +26,17 @@ QAM 저장소의 `assets/`, `exp_data/`는 가져오지 않았습니다.
 
 ## upstream 대비 변경점
 
-- **RQL 이식**: loss와 네트워크는 원본 그대로입니다. 이 코드베이스에 맞추려고 바꾼 것은 세 가지입니다.
+- **RQL 이식**: loss와 네트워크는 원본 그대로입니다. 이 코드베이스에 맞추려고 바꾼 것은 네 가지입니다.
   - `sample_actions(observations, rng, temperature)`로 다른 에이전트와 시그니처를 맞췄습니다.
   - 온라인 UTD 업데이트용 `batch_update`를 추가했습니다.
   - config에 `batch_format='traj'`를 넣어, 학습 루프가 `Dataset.sample_traj`로 시간축 우선(time-major) 배치를 뽑게 했습니다.
+  - `create`가 넘겨받은 config를 복사해서 씁니다. upstream처럼 원본에 `discount_mul`(jnp 배열)을 써 넣으면 `main.py`의 `flags.json` 저장이 실패합니다.
 - **`utils/datasets.py`**: RQL용 `sample_traj`를 추가했습니다. `ReplayBuffer.add_transition`은 에피소드가 끝날 때 경계(`terminal_locs`, `initial_locs`)를 갱신합니다.
 - **`main.py`**
   - `batch_format='traj'`인 에이전트는 오프라인·온라인 모두 `sample_traj`를 씁니다. 이때 `--balanced_sampling`은 지원하지 않습니다.
   - config에 `online_temperature`가 있으면 온라인 탐색 시 그 값을 `sample_actions`에 넘깁니다. RQL 원본은 온라인에서 temperature=1, 즉 EMA가 아닌 actor로 탐색합니다.
-  - wandb 프로젝트 이름을 `flowrl`로 바꿨습니다.
+  - wandb는 기본으로 꺼져 있습니다(`--wandb_mode=disabled`). 결과는 항상 `save_dir` 아래 CSV로 남습니다. 켜려면 `--wandb_mode=online` 또는 `offline`을 주고, 프로젝트 이름은 `flowrl`입니다.
+- **`log_utils.py`**: 최신 wandb(0.31)가 거부하는 `wandb.Settings(start_method=...)`를 뺐습니다.
 
 ## 설치와 실행
 

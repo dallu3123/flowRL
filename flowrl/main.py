@@ -47,6 +47,7 @@ flags.DEFINE_bool('sparse', False, "make the task sparse reward")
 flags.DEFINE_bool('auto_cleanup', True, "remove all intermediate checkpoints when the run finishes")
 
 flags.DEFINE_bool('balanced_sampling', False, "sample half offline and online replay buffer")
+flags.DEFINE_enum('wandb_mode', 'disabled', ['online', 'offline', 'disabled'], 'wandb mode. Results are always written to CSV under save_dir.')
 
 def save_csv_loggers(csv_loggers, save_dir):
     for prefix, csv_logger in csv_loggers.items():
@@ -71,8 +72,8 @@ class LoggingHelper:
 
 def main(_):
     exp_name = get_exp_name(FLAGS)
-    run = setup_wandb(project='flowrl', group=FLAGS.run_group, name=exp_name, tags=FLAGS.tags.split(","))
-    FLAGS.save_dir = os.path.join(FLAGS.save_dir, wandb.run.project, FLAGS.run_group, FLAGS.env_name, exp_name)
+    run = setup_wandb(project='flowrl', group=FLAGS.run_group, name=exp_name, tags=FLAGS.tags.split(","), mode=FLAGS.wandb_mode)
+    FLAGS.save_dir = os.path.join(FLAGS.save_dir, 'flowrl', FLAGS.run_group, FLAGS.env_name, exp_name)
     
     # data loading
     if FLAGS.ogbench_dataset_dir is not None:
@@ -399,7 +400,7 @@ def main(_):
 
     # a token to indicate a successfully finished run
     with open(os.path.join(FLAGS.save_dir, 'token.tk'), 'w') as f:
-        f.write(run.url)
+        f.write(run.url or '')  # run.url is None unless wandb is online
 
     # cleanup
     if FLAGS.auto_cleanup:
